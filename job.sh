@@ -3,6 +3,10 @@
 #SBATCH --time=24:00:00
 #SBATCH --ntasks=1
 #SBATCH --output=logs/scan-%j.out
+#SBATCH --account=pc_heptheory
+#SBATCH --partition=lr6
+#SBATCH --qos=lr_normal
+#SBATCH --mail-type=NONE
 
 directory=$1
 output=$2
