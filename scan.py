@@ -2,13 +2,13 @@
 from argparse import ArgumentParser
 from datetime import datetime
 import csv
-import logging
+import gzip
 import os
 import pwd
 import queue
 import threading
 
-FIELDNAMES = ["path", "size_bytes", "owner", "uid", "mtime"]
+FIELDNAMES = ["path", "size_bytes", "owner", "uid", "mtime", "error"]
 
 
 def get_username(uid):
@@ -18,7 +18,7 @@ def get_username(uid):
         return str(uid)
 
 
-def scan(root, writer, log, n_workers, progress_every=100_000):
+def scan(root, writer, n_workers, progress_every=100_000):
     dir_q = queue.Queue()
     dir_q.put(root)
 
@@ -42,7 +42,8 @@ def scan(root, writer, log, n_workers, progress_every=100_000):
         try:
             it = os.scandir(current)
         except PermissionError:
-            log.warning(current)
+            with write_lock:
+                writer.writerow({"path": current, "error": "permission_denied"})
             return
         with it:
             for entry in it:
@@ -51,10 +52,10 @@ def scan(root, writer, log, n_workers, progress_every=100_000):
                 try:
                     st = entry.stat(follow_symlinks=False)
                 except PermissionError:
-                    log.warning(entry.path)
+                    rows.append({"path": entry.path, "error": "permission_denied"})
                     continue
                 except OSError as e:
-                    log.warning("%s: %s", entry.path, e)
+                    rows.append({"path": entry.path, "error": str(e)})
                     continue
                 if entry.is_dir(follow_symlinks=False):
                     dir_q.put(entry.path)
@@ -65,18 +66,20 @@ def scan(root, writer, log, n_workers, progress_every=100_000):
                         "owner": get_username(st.st_uid),
                         "uid": st.st_uid,
                         "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(),
+                        "error": "",
                     })
 
         if not rows:
             return
 
+        n_files = sum(1 for r in rows if not r.get("error"))
         with write_lock:
             writer.writerows(rows)
-
         with counter_lock:
-            counter[0] += len(rows)
+            prev = counter[0]
+            counter[0] += n_files
             n = counter[0]
-        if n // progress_every != (n - len(rows)) // progress_every:
+        if n // progress_every != prev // progress_every:
             print(f"{n:,} files scanned", flush=True)
 
     threads = [threading.Thread(target=worker, daemon=True) for _ in range(n_workers)]
@@ -91,24 +94,16 @@ def scan(root, writer, log, n_workers, progress_every=100_000):
 def main():
     parser = ArgumentParser(description="Scan a directory and record file metadata")
     parser.add_argument("directory", help="Root directory to scan")
-    parser.add_argument("output", help="Output CSV file")
-    parser.add_argument("--log", default=None, help="Log file for permission errors (default: stderr)")
+    parser.add_argument("output", help="Output file (.csv.gz)")
     parser.add_argument("--workers", type=int, default=os.cpu_count(), help="Number of threads (default: CPU count)")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        filename=args.log,
-        level=logging.WARNING,
-        format="%(message)s",
-    )
-    log = logging.getLogger("scan")
-
     print(f"Scanning {args.directory} with {args.workers} workers", flush=True)
 
-    with open(args.output, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+    with gzip.open(args.output, "wt", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES, restval="")
         writer.writeheader()
-        scan(args.directory, writer, log, args.workers)
+        scan(args.directory, writer, args.workers)
 
 
 if __name__ == "__main__":
