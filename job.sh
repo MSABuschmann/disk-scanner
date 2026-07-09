@@ -15,5 +15,4 @@ mkdir -p logs
 mkdir -p "$(dirname "$output")"
 
 python scan.py "$directory" "$output" \
-    --workers "${SLURM_CPUS_ON_NODE:-1}" \
-    --log "logs/permission_denied-$SLURM_JOB_ID.log"
+    --workers "${SLURM_CPUS_ON_NODE:-1}"
