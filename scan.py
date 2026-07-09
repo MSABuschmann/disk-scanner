@@ -7,6 +7,8 @@ import os
 import pwd
 import queue
 import threading
+import time
+import time
 
 FIELDNAMES = ["path", "size_bytes", "owner", "uid", "mtime", "error"]
 
@@ -100,10 +102,13 @@ def main():
 
     print(f"Scanning {args.directory} with {args.workers} workers", flush=True)
 
+    t0 = time.perf_counter()
     with gzip.open(args.output, "wt", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, restval="")
         writer.writeheader()
         scan(args.directory, writer, args.workers)
+    elapsed = time.perf_counter() - t0
+    print(f"Elapsed: {elapsed / 3600:.2f} h ({elapsed:.0f} s)", flush=True)
 
 
 if __name__ == "__main__":
