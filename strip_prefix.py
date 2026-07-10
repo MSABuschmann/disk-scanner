@@ -11,7 +11,8 @@ def strip_prefix(input_path, output_path, prefix):
         path_col = header.strip().split(",").index("path")
         for line in fin:
             parts = line.split(",")
-            parts[path_col] = parts[path_col].removeprefix(prefix)
+            p = parts[path_col]
+            parts[path_col] = p[len(prefix):] if p.startswith(prefix) else p
             fout.write(",".join(parts))
 
 def main():
